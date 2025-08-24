@@ -1,0 +1,297 @@
+FROM archlinux:latest
+
+# Install base system and dev dependencies
+RUN pacman -Syu --noconfirm && \
+    pacman-key --init && \
+    pacman-key --populate archlinux && \
+    pacman -S --noconfirm \
+      git base-devel neovim ripgrep fd lua unzip npm \
+      python-pip xclip rust go curl sudo tmux
+
+# Create non-root user
+RUN useradd -m developer && \
+    echo "developer ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+# Configure tmux for developer user
+USER root
+RUN echo "set -as terminal-features ',xterm*:RGB'" > /home/developer/.tmux.conf && \
+    chown developer:developer /home/developer/.tmux.conf
+USER developer
+WORKDIR /home/developer
+
+# Install NvChad
+RUN git clone https://github.com/NvChad/NvChad ~/.config/nvim --depth 1
+
+# Create custom configuration for NvChad
+RUN mkdir -p ~/.config/nvim/lua/custom/plugins && \
+    mkdir -p ~/.config/nvim/lua/custom/configs
+
+# Add custom plugins configuration
+RUN cat > ~/.config/nvim/lua/custom/plugins.lua << 'EOF'
+local overrides = require("custom.configs.overrides")
+
+---@type NvPluginSpec[]
+local plugins = {
+  -- Override plugin definitions
+  {
+    "neovim/nvim-lspconfig",
+    dependencies = {
+      -- format & linting
+      {
+        "jose-elias-alvarez/null-ls.nvim",
+        config = function()
+          require "custom.configs.null-ls"
+        end,
+      },
+    },
+    config = function()
+      require "plugins.configs.lspconfig"
+      require "custom.configs.lspconfig"
+    end, -- Override to setup mason-lspconfig
+  },
+
+  -- Add codecompanion plugin
+  {
+    "olimorris/codecompanion.nvim",
+    config = function()
+      require("codecompanion").setup({
+        adapters = {
+          openai = {
+            env = {
+              api_key = "OPENAI_API_KEY",
+            },
+          },
+        },
+      })
+    end,
+    dependencies = {
+      "nvim-lua/plenary.nvim",
+      "nvim-treesitter/nvim-treesitter",
+    }
+  },
+
+  -- override plugin configs
+  {
+    "nvim-treesitter/nvim-treesitter",
+    opts = overrides.treesitter,
+  },
+
+  {
+    "williamboman/mason.nvim",
+    opts = overrides.mason
+  },
+
+  {
+    "nvim-tree/nvim-tree.lua",
+    opts = overrides.nvimtree,
+  },
+}
+
+return plugins
+EOF
+
+# Add custom chadrc configuration
+RUN cat > ~/.config/nvim/lua/custom/chadrc.lua << 'EOF'
+---@type ChadrcConfig
+local M = {}
+
+-- Path to overriding theme and highlights files
+local highlights = require "custom.highlights"
+
+M.ui = {
+  theme = "tokyonight",
+  theme_toggle = { "tokyonight", "one_light" },
+
+  hl_override = highlights.override,
+  hl_add = highlights.add,
+}
+
+M.plugins = "custom.plugins"
+
+-- check core.mappings for table structure
+M.mappings = require "custom.mappings"
+
+return M
+EOF
+
+# Add custom mappings
+RUN cat > ~/.config/nvim/lua/custom/mappings.lua << 'EOF'
+---@type MappingsTable
+local M = {}
+
+M.general = {
+  n = {
+    [";"] = { ":", "enter command mode", opts = { nowait = true } },
+  },
+}
+
+-- more keybinds!
+
+return M
+EOF
+
+# Add custom highlights
+RUN cat > ~/.config/nvim/lua/custom/highlights.lua << 'EOF'
+-- To find any highlight groups: "<cmd> Telescope highlights"
+-- Each highlight group can take a table with variables fg, bg, bold, italic, etc
+-- base30 variable names can also be used as colors
+
+local M = {}
+
+---@type Base46HLGroupsList
+M.override = {
+  Comment = {
+    italic = true,
+  },
+}
+
+---@type HLTable
+M.add = {
+  NvimTreeOpenedFolderName = { fg = "green", bold = true },
+}
+
+return M
+EOF
+
+# Add overrides configuration
+RUN cat > ~/.config/nvim/lua/custom/configs/overrides.lua << 'EOF'
+local M = {}
+
+M.treesitter = {
+  ensure_installed = {
+    "vim",
+    "lua",
+    "html",
+    "css",
+    "javascript",
+    "typescript",
+    "tsx",
+    "c",
+    "markdown",
+    "markdown_inline",
+    "python",
+    "go",
+    "rust",
+  },
+  indent = {
+    enable = true,
+    -- disable = {
+    --   "python"
+    -- },
+  },
+}
+
+M.mason = {
+  ensure_installed = {
+    -- lua stuff
+    "lua-language-server",
+    "stylua",
+
+    -- web dev stuff
+    "css-lsp",
+    "html-lsp",
+    "typescript-language-server",
+    "deno",
+    "prettier",
+
+    -- c/cpp stuff
+    "clangd",
+    "clang-format",
+
+    -- python
+    "pyright",
+    "black",
+
+    -- go
+    "gopls",
+    "gofumpt",
+
+    -- rust
+    "rust-analyzer",
+  },
+}
+
+-- git support in nvimtree
+M.nvimtree = {
+  git = {
+    enable = true,
+  },
+
+  renderer = {
+    highlight_git = true,
+    icons = {
+      show = {
+        git = true,
+      },
+    },
+  },
+}
+
+return M
+EOF
+
+# Add LSP configuration
+RUN cat > ~/.config/nvim/lua/custom/configs/lspconfig.lua << 'EOF'
+local on_attach = require("plugins.configs.lspconfig").on_attach
+local capabilities = require("plugins.configs.lspconfig").capabilities
+
+local lspconfig = require "lspconfig"
+
+-- if you just want default config for the servers then put them in a table
+local servers = { "html", "cssls", "tsserver", "clangd", "pyright", "gopls", "rust_analyzer" }
+
+for _, lsp in ipairs(servers) do
+  lspconfig[lsp].setup {
+    on_attach = on_attach,
+    capabilities = capabilities,
+  }
+end
+
+-- 
+-- lspconfig.pyright.setup { blabla}
+EOF
+
+# Add null-ls configuration
+RUN cat > ~/.config/nvim/lua/custom/configs/null-ls.lua << 'EOF'
+local present, null_ls = pcall(require, "null-ls")
+
+if not present then
+  return
+end
+
+local b = null_ls.builtins
+
+local sources = {
+
+  -- webdev stuff
+  b.formatting.deno_fmt, -- choosed deno for ts/js files cuz its very fast!
+  b.formatting.prettier.with { filetypes = { "html", "markdown", "css" } }, -- so prettier works only on these filetypes
+
+  -- Lua
+  b.formatting.stylua,
+
+  -- cpp
+  b.formatting.clang_format,
+
+  -- python
+  b.formatting.black,
+
+  -- go
+  b.formatting.gofumpt,
+}
+
+null_ls.setup {
+  debug = true,
+  sources = sources,
+}
+EOF
+
+# Set proper permissions
+RUN sudo chown -R developer:developer /home/developer/.config
+
+# Set environment variables for better terminal support
+ENV TERM=xterm-256color
+ENV COLORTERM=truecolor
+
+# Default command
+CMD ["/bin/bash"]

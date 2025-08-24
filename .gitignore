@@ -1,0 +1,11 @@
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+
+# Scripts, as I'm keeping information specific to my computer in them.
+*.bat
+*.sh

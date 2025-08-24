@@ -1,0 +1,120 @@
+FROM alpine:3.22 AS builder
+
+# Install build tools and required runtime dependencies
+RUN apk add --no-cache \
+    curl ca-certificates git build-base make bash \
+    neovim jq curl unzip tzdata \
+    nodejs npm python3 py3-pip rust \
+    go tmux xclip
+
+# Stage 2: runtime (lean image)
+FROM alpine:3.22
+
+# Timezone data
+ENV TZ=America/Los_Angeles
+
+# Install only runtime dependencies required by your setup
+RUN apk add --no-cache \
+    ca-certificates curl tzdata git neovim \
+    nodejs npm python3 py3-pip unzip bash tmux xclip
+
+# Create non-root user
+RUN adduser -D developer && echo "developer ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+USER developer
+WORKDIR /home/developer
+
+# Install OpenCode
+RUN curl -fsSL https://opencode.ai/install | bash
+
+# Install AstroNvim template (keep as non-root for reproducibility)
+RUN git clone --depth 1 https://github.com/AstroNvim/template ~/.config/nvim
+RUN rm -rf ~/.config/nvim/.git
+
+# Create Neovim plugin config directory
+RUN mkdir -p ~/.config/nvim/lua/plugins
+
+# Melange plugin config (single multi-line RUN)
+RUN mkdir -p ~/.config/nvim/lua/plugins && \
+    printf '%s\n' \
+    'return {' \
+    '  "savq/melange-nvim",' \
+    '  lazy = false,' \
+    '  priority = 1000,' \
+    '  config = function()' \
+    '    vim.cmd.colorscheme("melange")' \
+    '  end,' \
+    '}' > ~/.config/nvim/lua/plugins/melange.lua
+
+# Point AstroUI to melange
+RUN sed -i 's/colorscheme = "astrodark"/colorscheme = "melange"/' ~/.config/nvim/lua/plugins/astroui.lua
+
+# Ensure melange in polish.lua
+RUN echo 'vim.cmd.colorscheme("melange")' >> ~/.config/nvim/lua/polish.lua
+
+RUN nvim --headless "+Lazy! sync" +qa
+
+# Tmux config
+RUN mkdir -p ~/.tmux.d && \
+    cat > ~/.tmux.conf <<'EOF'
+# Change prefix from Ctrl-B to Ctrl-A
+unbind C-b
+set -g prefix C-a
+bind C-a send-prefix
+
+# Enable true color
+set -as terminal-features ',xterm*:RGB'
+set -g default-terminal "screen-256color"
+
+# Status bar colors (Melange-inspired)
+set -g status-bg '#2d2721'
+set -g status-fg '#c7b195'
+set -g status-left-length 40
+set -g status-right-length 80
+
+# Window status colors
+set -g window-status-current-style 'bg=#c7b195,fg=#2d2721,bold'
+set -g window-status-style 'bg=#2d2721,fg=#A3A9CE'
+set -g window-status-separator ' '
+
+# Pane border colors
+set -g pane-border-style 'fg=#4f4135'
+set -g pane-active-border-style 'fg=#A3A9CE'
+
+# Message colors
+set -g message-style 'bg=#c7b195,fg=#2d2721,bold'
+set -g message-command-style 'bg=#726450,fg=#c7b195'
+
+# Mode colors (copy mode, etc.)
+set -g mode-style 'bg=#c7b195,fg=#2d2721'
+
+# Status bar content
+set -g status-left '#[bg=#726450,fg=#c7b195,bold] #S #[default]'
+set -g status-right '#[bg=#726450,fg=#c7b195] %Y-%m-%d #[bg=#A3A9CE,fg=#2d2721,bold] %H:%M '
+
+# Window status format
+set -g window-status-format ' #I:#W '
+set -g window-status-current-format ' #I:#W '
+
+# Clock color
+set -g clock-mode-colour '#A3A9CE'
+
+# Other useful settings
+#set -g mouse on
+set -g base-index 1
+set -g pane-base-index 1
+set -g renumber-windows on
+set -g set-titles on
+set -g set-titles-string '#T'
+
+# Key bindings
+bind r source-file ~/.tmux.conf \; display-message "Config reloaded!"
+bind | split-window -h
+bind - split-window -v
+EOF
+
+# Copy local binaries path (if needed)
+ENV PATH="/home/developer/.local/bin:${PATH}"
+
+# Final default
+CMD [ "bash" ]

@@ -1,0 +1,68 @@
+FROM archlinux:latest
+
+# Install base system and dev dependencies
+RUN pacman -Syu --noconfirm && \
+    pacman-key --init && \
+    pacman-key --populate archlinux && \
+    pacman -S --noconfirm \
+      git base-devel neovim ripgrep fd lua unzip npm \
+      python-pip xclip rust go curl sudo tmux
+
+# Create non-root user
+RUN useradd -m developer && \
+    echo "developer ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+# Configure tmux for developer user
+USER root
+RUN echo "set -as terminal-features ',xterm*:RGB'" > /home/developer/.tmux.conf && \
+    chown developer:developer /home/developer/.tmux.conf
+USER developer
+WORKDIR /home/developer
+
+# Install LunarVim (non-interactive)
+RUN bash <(curl -s https://raw.githubusercontent.com/LunarVim/LunarVim/master/utils/installer/install.sh) --yes
+
+# Add plugins to config.lua using valid Lua syntax
+RUN bash -c "printf '%s\n' \
+'lvim.plugins = lvim.plugins or {}' \
+'' \
+'table.insert(lvim.plugins, {' \
+'  \"olimorris/codecompanion.nvim\",' \
+'  config = function()' \
+'    require(\"codecompanion\").setup({' \
+'      adapters = {' \
+'        openai = {' \
+'          env_vars = {' \
+'            api_key = \"OPENAI_API_KEY\",' \
+'          },' \
+'        },' \
+'      },' \
+'    })' \
+'  end,' \
+'  dependencies = {' \
+'    \"nvim-lua/plenary.nvim\",' \
+'    \"nvim-treesitter/nvim-treesitter\",' \
+'  }' \
+'})' \
+'' \
+'lvim.colorscheme = \"tokyonight\"' \
+> /home/developer/.config/lvim/config.lua"
+
+# Set up virtual environment and install requirements
+RUN cd /home/developer/repos/mcp-chat-client && \
+    python -m venv .venv && \
+    chmod +x .venv/bin/activate && \
+    source .venv/bin/activate && \
+    pip install --upgrade pip && \
+    if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+# Add local binaries to PATH
+ENV PATH="/home/developer/.local/bin:${PATH}"
+
+# Document required environment variables
+# OPENAI_API_KEY should be provided at runtime
+
+# Expose port for Next.js dev server
+EXPOSE 3000
+
+CMD [ "bash" ]
