@@ -1,0 +1,133 @@
+FROM ubuntu:24.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential ca-certificates curl git tzdata nodejs npm python3 python3-pip unzip tmux xclip && \
+    rm -rf /var/lib/apt/lists/*
+
+# Stage 2: runtime
+FROM ubuntu:24.04
+
+ENV TZ=America/Los_Angeles
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Runtime dependencies only
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates curl tzdata git nodejs npm python3 python3-pip unzip tmux xclip sudo \
+    fontconfig fonts-dejavu fonts-noto fonts-noto-color-emoji \
+    fonts-font-awesome fonts-terminus fonts-inconsolata && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN useradd -m developer && \
+    echo "developer ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+USER developer
+WORKDIR /home/developer
+
+# Set locale for Unicode support
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
+# Install latest Neovim using AppImage
+RUN NVIM_VERSION=$(curl -s https://api.github.com/repos/neovim/neovim/releases/latest | grep -oP '"tag_name": "\K[^"]*') && \
+    curl -L -o nvim.appimage "https://github.com/neovim/neovim/releases/download/${NVIM_VERSION}/nvim-linux-x86_64.appimage" && \
+    chmod u+x nvim.appimage && \
+    ./nvim.appimage --appimage-extract && \
+    sudo mv squashfs-root /opt/nvim && \
+    sudo ln -sf /opt/nvim/usr/bin/nvim /usr/local/bin/nvim && \
+    rm nvim.appimage
+
+# Install OpenCode
+RUN curl -fsSL https://opencode.ai/install | bash
+
+# AstroNvim template (no git history)
+RUN git clone --depth 1 https://github.com/AstroNvim/template ~/.config/nvim && rm -rf ~/.config/nvim/.git
+
+# Neovim plugin config directory
+RUN mkdir -p ~/.config/nvim/lua/plugins
+
+# Melange plugin config (write in one step)
+#RUN mkdir -p ~/.config/nvim/lua/plugins && \
+#    bash -lc 'cat > ~/.config/nvim/lua/plugins/melange.lua << "EOF"\nreturn {\n  "savq/melange-nvim",\n  lazy = false,\n  priority = 1000,\n  config = function()\n    vim.cmd.colorscheme("melange")\n  end,\n}\nEOF'
+
+# Melange plugin config (write in one step)
+RUN mkdir -p ~/.config/nvim/lua/plugins && \
+    printf 'return {\n  "savq/melange-nvim",\n  lazy = false,\n  priority = 1000,\n  config = function()\n    vim.cmd.colorscheme("melange")\n  end,\n}\n' > ~/.config/nvim/lua/plugins/melange.lua
+
+# Point AstroUI to melange
+RUN sed -i 's/colorscheme = "astrodark"/colorscheme = "melange"/' ~/.config/nvim/lua/plugins/astroui.lua
+
+# Ensure melange in polish.lua
+RUN echo 'vim.cmd.colorscheme("melange")' >> ~/.config/nvim/lua/polish.lua
+
+# Sync Neovim plugins after all configuration
+RUN nvim --headless "+Lazy! sync" +qa
+
+# Configure tmux
+RUN cat <<'EOF' > ~/.tmux.conf
+# Change prefix from Ctrl-B to `
+unbind C-b
+set -g prefix `
+bind ` send-prefix
+
+# Enable true color
+set -as terminal-features ',*:RGB'
+set -as terminal-overrides ',*:Tc'
+set -g default-terminal "tmux-256color"
+
+# Status bar colors (Melange-inspired)
+set -g status-bg '#2d2721'
+set -g status-fg '#726450'
+set -g status-left-length 40
+set -g status-right-length 80
+
+# Window status colors
+set -g window-status-current-style 'bg=#2d2721,fg=#A3A9CE,bold'
+set -g window-status-style 'bg=#2d2721,fg=#c7b195'
+set -g window-status-separator ' '
+
+# Pane border colors
+set -g pane-border-style 'fg=#4f4135'
+set -g pane-active-border-style 'fg=#A3A9CE'
+
+# Message colors
+set -g message-style 'bg=#c7b195,fg=#2d2721,bold'
+set -g message-command-style 'bg=#4f4135,fg=#c7b195'
+
+# Mode colors (copy mode, etc.)
+set -g mode-style 'bg=#c7b195,fg=#2d2721'
+
+# Status bar content
+set -g status-left '#[bg=#4f4135,fg=#c7b195,bold] #S #[default]'
+set -g status-right '#[bg=#4f4135,fg=#c7b195] %Y-%m-%d #[bg=#A3A9CE,fg=#2d2721,bold] %H:%M '
+
+# Window status format
+set -g window-status-format ' #I:#W '
+set -g window-status-current-format ' #[#A3A9CE]● #[default]#I:#W '
+
+# Clock color
+set -g clock-mode-colour '#A3A9CE'
+
+# Other useful settings
+#set -g mouse on
+set -g base-index 1
+set -g pane-base-index 1
+set -g renumber-windows on
+set -g set-titles on
+set -g set-titles-string '#T'
+set -g status-position top
+
+# Key bindings
+bind r source-file ~/.tmux.conf \; display-message "Config reloaded!"
+bind | split-window -h
+bind - split-window -v
+EOF
+
+ENV PATH="/home/developer/.local/bin:${PATH}"
+
+# Default shell
+CMD [ "bash" ]

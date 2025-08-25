@@ -52,31 +52,25 @@ RUN nvim --headless "+Lazy! sync" +qa
 
 # Configure tmux
 RUN cat <<EOF > ~/.tmux.conf
-# Change prefix from Ctrl-B to Ctrl-A
+# Change prefix from Ctrl-B to `
 unbind C-b
-set -g prefix C-a
-bind C-a send-prefix
+set -g prefix \`
+bind \` send-prefix
 
-# Enable true color support
+# Enable true color
 set -as terminal-features ',xterm*:RGB'
 set -g default-terminal "screen-256color"
 
-# Melange color palette
-# Background: #2d2721 (dark brown)
-# Foreground: #c7b195 (warm beige)
-# Accent: #A3A9CE (blue highlight)
-# Secondary: #726450 (medium brown)
-# Tertiary: #4f4135 (dark brown)
 
 # Status bar colors (Melange-inspired)
 set -g status-bg '#2d2721'
-set -g status-fg '#c7b195'
+set -g status-fg '#726450'
 set -g status-left-length 40
 set -g status-right-length 80
 
 # Window status colors
-set -g window-status-current-style 'bg=#c7b195,fg=#2d2721,bold'
-set -g window-status-style 'bg=#2d2721,fg=#A3A9CE'
+set -g window-status-current-style 'bg=#2d2721,fg=#A3A9CE,bold'
+set -g window-status-style 'bg=#2d2721,fg=#c7b195'
 set -g window-status-separator ' '
 
 # Pane border colors
@@ -85,18 +79,18 @@ set -g pane-active-border-style 'fg=#A3A9CE'
 
 # Message colors
 set -g message-style 'bg=#c7b195,fg=#2d2721,bold'
-set -g message-command-style 'bg=#726450,fg=#c7b195'
+set -g message-command-style 'bg=#f4135,fg=#c7b195'
 
 # Mode colors (copy mode, etc.)
 set -g mode-style 'bg=#c7b195,fg=#2d2721'
 
 # Status bar content
-set -g status-left '#[bg=#726450,fg=#c7b195,bold] #S #[default]'
-set -g status-right '#[bg=#726450,fg=#c7b195] %Y-%m-%d #[bg=#A3A9CE,fg=#2d2721,bold] %H:%M '
+set -g status-left '#[bg=#4f4135,fg=#c7b195,bold] #S #[default]'
+set -g status-right '#[bg=#4f4135,fg=#c7b195] %Y-%m-%d #[bg=#A3A9CE,fg=#2d2721,bold] %H:%M '
 
 # Window status format
 set -g window-status-format ' #I:#W '
-set -g window-status-current-format ' #I:#W '
+set -g window-status-current-format ' #[#A3A9CE]● #[default]#I:#W '
 
 # Clock color
 set -g clock-mode-colour '#A3A9CE'
@@ -108,6 +102,7 @@ set -g pane-base-index 1
 set -g renumber-windows on
 set -g set-titles on
 set -g set-titles-string '#T'
+set -g status-position top
 
 # Key bindings
 bind r source-file ~/.tmux.conf \; display-message "Config reloaded!"
