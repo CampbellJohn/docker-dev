@@ -33,8 +33,9 @@ RUN NVIM_VERSION=$(curl -s https://api.github.com/repos/neovim/neovim/releases/l
     sudo ln -sf /opt/nvim/usr/bin/nvim /usr/local/bin/nvim && \
     rm nvim.appimage
 
-# Install OpenCode
-RUN curl -fsSL https://opencode.ai/install | bash
+# Install Claude Code locally for developer user
+RUN npm config set prefix ~/.local && \
+    npm install -g @anthropic-ai/claude-code
 
 # AstroNvim template (no git history)
 RUN git clone --depth 1 https://github.com/AstroNvim/template ~/.config/nvim && rm -rf ~/.config/nvim/.git
